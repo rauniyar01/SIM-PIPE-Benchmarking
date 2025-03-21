@@ -1,0 +1,88 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: image-processing-pipeline-
+spec:
+  entrypoint: run-image-processing-pipeline
+  volumes:
+    - name: out-volume
+      emptyDir: {}
+  templates:
+    - name: run-image-processing-pipeline
+      dag:
+        tasks:
+          - name: filter-image
+            template: filter-image
+            arguments:
+              artifacts:
+                - name: input_image
+                  raw:
+                    data: provide sample image file
+          - name: rotate-image
+            template: rotate-image
+            dependencies: [filter-image]
+            arguments:
+              artifacts:
+                - name: filtered_image
+                  from: "{{tasks.filter-image.outputs.artifacts.filtered_image}}"
+          - name: resize-image
+            template: resize-image
+            dependencies: [rotate-image]
+            arguments:
+              artifacts:
+                - name: rotated_image
+                  from: "{{tasks.rotate-image.outputs.artifacts.rotated_image}}"
+
+      - name: filter-image
+      container:
+        image: rauniyar01/filter-image:1.0
+        command: ["ls", "-l", "&&",  "python", "filter.py"]
+        volumeMounts:
+          - name: out-volume
+            mountPath: /out
+      inputs:
+        artifacts:
+        - name: input_image
+          path: /in/input.jpg
+      outputs:
+        artifacts:
+        - name: filtered_image
+          path: /out/filtered_image.jpg
+        - name: performance_filter
+          path: /out/performance_filter.txt
+
+    - name: rotate-image
+      container:
+        image: rauniyar01/rotate-image:1.0
+        command: ["python", "rotate.py"]
+        volumeMounts:
+          - name: out-volume
+            mountPath: /out
+      inputs:
+        artifacts:
+        - name: filtered_image
+          path: /in/filtered_image.jpg
+      outputs:
+        artifacts:
+        - name: rotated_image
+          path: /out/rotated_image.jpg
+        - name: performance_rotate
+          path: /out/performance_rotate.txt
+
+    - name: resize-image
+      container:
+        image: rauniyar01/resize-image:1.0
+        command: ["python", "resize.py"]
+        volumeMounts:
+          - name: out-volume
+            mountPath: /out
+      inputs:
+        artifacts:
+        - name: rotated_image
+          path: /in/rotated_image.jpg
+      outputs:
+        artifacts:
+        - name: resized_image
+          path: /out/resized_image.jpg
+        - name: performance_resize
+          path: /out/performance_resize.txt
