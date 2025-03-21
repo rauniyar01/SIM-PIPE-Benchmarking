@@ -4,9 +4,6 @@ metadata:
   generateName: image-processing-pipeline-
 spec:
   entrypoint: run-image-processing-pipeline
-  volumes:
-    - name: out-volume
-      emptyDir: {}
   templates:
     - name: run-image-processing-pipeline
       dag:
@@ -33,13 +30,17 @@ spec:
                 - name: rotated_image
                   from: "{{tasks.rotate-image.outputs.artifacts.rotated_image}}"
 
-      - name: filter-image
+    - name: filter-image
       container:
-        image: rauniyar01/filter-image:1.0
-        command: ["ls", "-l", "&&",  "python", "filter.py"]
-        volumeMounts:
-          - name: out-volume
-            mountPath: /out
+        image: ubuntu:latest
+        command: ["/bin/bash", "-c"]
+        args:
+          - |
+            ls -l /in
+            mkdir -p /out
+            cp /in/input.jpg /out/filtered_image.jpg
+            echo "filtering image" > /out/performance_filter.txt
+            ls -l /out
       inputs:
         artifacts:
         - name: input_image
@@ -53,11 +54,15 @@ spec:
 
     - name: rotate-image
       container:
-        image: rauniyar01/rotate-image:1.0
-        command: ["python", "rotate.py"]
-        volumeMounts:
-          - name: out-volume
-            mountPath: /out
+        image: ubuntu:latest
+        command: ["/bin/bash", "-c"]
+        args:
+          - |
+            ls -l /in
+            mkdir -p /out
+            cp /in/filtered_image.jpg /out/rotated_image.jpg
+            echo "rotating image" > /out/performance_rotate.txt
+            ls -l /out
       inputs:
         artifacts:
         - name: filtered_image
@@ -71,11 +76,15 @@ spec:
 
     - name: resize-image
       container:
-        image: rauniyar01/resize-image:1.0
-        command: ["python", "resize.py"]
-        volumeMounts:
-          - name: out-volume
-            mountPath: /out
+        image: ubuntu:latest
+        command: ["/bin/bash", "-c"]
+        args:
+          - |
+            ls -l /in
+            mkdir -p /out
+            cp /in/rotated_image.jpg /out/resized_image.jpg
+            echo "resizing image" > /out/performance_resize.txt
+            ls -l /out
       inputs:
         artifacts:
         - name: rotated_image
