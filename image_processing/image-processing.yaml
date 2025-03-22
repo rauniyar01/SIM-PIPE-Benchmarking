@@ -7,6 +7,10 @@ spec:
   volumes:
     - name: out-volume
       emptyDir: {}
+  arguments:
+    parameters:
+      - name: input_key
+        value: "animal-dog.jpg"  # Match the file from the artifacts bucket
   templates:
     - name: run-image-processing-pipeline
       dag:
@@ -14,149 +18,104 @@ spec:
           - name: filter-image
             template: filter-image
             arguments:
-              parameters:
-              - name: mqtt-host
-                value: oslo.sct.sintef.no
-              - name: mqtt-username
-                value: TGW000000003
-              - name: mqtt-client-id
-                value: TGWDATACLOUD
-              - name: mqtt-pass
-                value: verysecretpassword
-              - name: mqtt-port
-                value: "1883"
-              - name: input-frequency
-                value: "1"
+              artifacts:
+                - name: Input
+                  s3:
+                    bucket: artifacts
+                    key: "{{workflow.parameters.input_key}}"
           - name: rotate-image
             template: rotate-image
             dependencies: [filter-image]
             arguments:
-              parameters:
-              - name: rabbitmq-host
-                value: oslo.sct.sintef.no:5672
-              - name: rabbitmq-username
-                value: tellucareapi
-              - name: rabbitmq-password
-                value: secondsecretpassword
-              - name: fhir-url
-                value: https://tellucloud-fhir.sintef.cloud
+              artifacts:
+                - name: filtered_image
+                  from: "{{tasks.filter-image.outputs.artifacts.filtered_image}}"
           - name: resize-image
             template: resize-image
             dependencies: [rotate-image]
             arguments:
-              parameters:
-              - name: rabbitmq-host-notify
-                value: oslo.sct.sintef.no:5672
-              - name: rabbitmq-username-notify
-                value: tellucareapi
-              - name: rabbitmq-password-notify
-                value: secondsecretpassword
-              - name: fhir-url-notify
-                value: https://tellucloud-fhir.sintef.cloud
+              artifacts:
+                - name: rotated_image
+                  from: "{{tasks.rotate-image.outputs.artifacts.rotated_image}}"
     - name: filter-image
       inputs:
         artifacts:
-        - name: Input
-          path: /in/input.jpg
-          raw:
-            data: provide sample image file
-        parameters:
-          - name: mqtt-host
-          - name: mqtt-username
-          - name: mqtt-client-id
-          - name: mqtt-pass
-          - name: mqtt-port
-          - name: input-frequency
+          - name: Input
+            path: /in/input.jpg
       container:
         image: rauniyar01/filter-image:1.0
-        env:
-          - name: MQTT_HOST
-            value: "{{inputs.parameters.mqtt-host}}"
-          - name: MQTT_USERNAME
-            value: "{{inputs.parameters.mqtt-username}}"
-          - name: MQTT_CLIENT_ID
-            value: "{{inputs.parameters.mqtt-client-id}}"
-          - name: MQTT_PASS
-            value: "{{inputs.parameters.mqtt-pass}}"
-          - name: MQTT_PORT
-            value: "{{inputs.parameters.mqtt-port}}"
-          - name: INPUT_FREQUENCY
-            value: "{{inputs.parameters.input-frequency}}"
-        command: ["python", "filter.py"]
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            echo "Starting filter-image step"
+            echo "Listing input directory:"
+            ls -la /in
+            echo "Running filter script"
+            python filter.py
+            echo "Listing output directory after processing:"
+            ls -la /out
         volumeMounts:
           - name: out-volume
             mountPath: /out
       outputs:
         artifacts:
-        - name: filtered_image
-          path: /out/filtered_image.jpg
-          archive:
-            none: {}
-        - name: performance_filter
-          path: /out/performance_filter.txt
-          archive:
-            none: {}
+          - name: filtered_image
+            path: /out/filtered_image.jpg
+          - name: performance_filter
+            path: /out/performance_filter.txt
     - name: rotate-image
       inputs:
-        parameters:
-          - name: rabbitmq-host
-          - name: rabbitmq-username
-          - name: rabbitmq-password
-          - name: fhir-url
+        artifacts:
+          - name: filtered_image
+            path: /in/filtered_image.jpg
       container:
         image: rauniyar01/rotate-image:1.0
-        env:
-          - name: RABBITMQ_HOST
-            value: "{{inputs.parameters.rabbitmq-host}}"
-          - name: RABBITMQ_USERNAME
-            value: "{{inputs.parameters.rabbitmq-username}}"
-          - name: RABBITMQ_PASSWORD
-            value: "{{inputs.parameters.rabbitmq-password}}"
-          - name: FHIR_URL
-            value: "{{inputs.parameters.fhir-url}}"
-        command: ["python", "rotate.py"]
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            echo "Starting rotate-image step"
+            echo "Listing input directory:"
+            ls -la /in
+            echo "Listing output directory before processing:"
+            ls -la /out
+            echo "Running rotate script"
+            python /app/rotate.py
+            echo "Listing output directory after processing:"
+            ls -la /out
         volumeMounts:
           - name: out-volume
             mountPath: /out
       outputs:
         artifacts:
-        - name: rotated_image
-          path: /out/rotated_image.jpg
-          archive:
-            none: {}
-        - name: performance_rotate
-          path: /out/performance_rotate.txt
-          archive:
-            none: {}
+          - name: rotated_image
+            path: /out/rotated_image.jpg
+          - name: performance_rotate
+            path: /out/performance_rotate.txt
     - name: resize-image
       inputs:
-        parameters:
-          - name: rabbitmq-host-notify
-          - name: rabbitmq-username-notify
-          - name: rabbitmq-password-notify
-          - name: fhir-url-notify
+        artifacts:
+          - name: rotated_image
+            path: /in/rotated_image.jpg
       container:
         image: rauniyar01/resize-image:1.0
-        env:
-          - name: RABBITMQ_HOST
-            value: "{{inputs.parameters.rabbitmq-host-notify}}"
-          - name: RABBITMQ_USERNAME
-            value: "{{inputs.parameters.rabbitmq-username-notify}}"
-          - name: RABBITMQ_PASSWORD
-            value: "{{inputs.parameters.rabbitmq-password-notify}}"
-          - name: FHIR_URL
-            value: "{{inputs.parameters.fhir-url-notify}}"
-        command: ["python", "resize.py"]
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            echo "Starting resize-image step"
+            echo "Listing input directory:"
+            ls -la /in
+            echo "Listing output directory before processing:"
+            ls -la /out
+            echo "Running resize script"
+            python /app/resize.py
+            echo "Listing output directory after processing:"
+            ls -la /out
         volumeMounts:
           - name: out-volume
             mountPath: /out
       outputs:
         artifacts:
-        - name: resized_image
-          path: /out/resized_image.jpg
-          archive:
-            none: {}
-        - name: performance_resize
-          path: /out/performance_resize.txt
-          archive:
-            none: {}
+          - name: resized_image
+            path: /out/resized_image.jpg
+          - name: performance_resize
+            path: /out/performance_resize.txt
